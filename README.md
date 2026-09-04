@@ -160,6 +160,7 @@ Coût total d'une session, cwd dans le system (A) vs au 1er message (B) :
 | 6 | Le seul vrai bug trouvé | sur modèles explicites (claude), le dernier outil n'est pas marqué pour le cache | corriger quand un accès claude sera disponible (bloqué par le plan aujourd'hui) |
 | 7 | **Méthode** | un résultat doit se confirmer sur 2 providers avec gros contexte, sinon c'est du bruit | appliquer pour la suite |
 | 8 | **Premier levier à gain démontré : réécrire les sorties bash** | −38 % du coût du tour sur un `ls -la` réel, qualité préservée (prototype A3 validé) | généraliser sur sessions complètes + étendre aux gros `read` |
+| 9 | **Déduplication des relectures (A2)** | 72 % des gros résultats en double éliminés (85 % du volume), qualité préservée | combiné A2+A3 : −35 % du coût sur scénario mixte |
 
 **Prochaine étape concrète** : implémenter et mesurer la **troncature des résultats d'outils** (extension + driver, ~0.5-1 $) — c'est la seule optimisation « classique » qui agit sur le poste qui coûte vraiment.
 
@@ -176,7 +177,7 @@ Coût total d'une session, cwd dans le system (A) vs au 1er message (B) :
 | **A3** | **Réécrire les sorties bash en format dense** | `ls -la` → **liste compacte de noms** (~30 chars/entrée au lieu de 110), logs répétitifs → comptage | **✅ PROTOTYPE VALIDÉ : −38 % du coût du tour** (28 231→17 446 tokens sur un ls réel), qualité parfaite | ✅ nouveau (opencode tronque, personne ne réécrit) |
 | **A1** | **Résumé + signature + récupération à la demande** | remplacer le résultat long par en-tête + utile + hash ; relire le plein via le hash si besoin | élevé | ✅ nouveau (troncature améliorée, sans perte) |
 | **B1** | **Neutraliser timestamps/paths/ordre dans les résultats** | `Sep 4 12:01` → `[ts]`, trier les listes : 2 exécutions du même `ls` = mêmes octets | moyen (crée des hits là où il n'y en a pas) | ✅ nouveau |
-| **A2** | **Dédupliquer les blocs identiques** entre résultats | même contenu relu → 1× + `<voir résultat #k>` | moyen | ✅ nouveau |
+| **A2** | **Dédupliquer les blocs identiques** entre résultats | même contenu relu (hash exact ou préfixe) → 1× + référence `<déjà lu — N chars>` | **✅ PROTOTYPE VALIDÉ : 72 % des gros résultats en double éliminés (85 % du volume)** | ✅ nouveau (l'embedding proposé est écarté : doublons 100 % bit-identiques, hash suffit) |
 | **A4** | **Marqueurs « déjà-vu »** | annoter le contenu déjà présent plutôt que le recopier | moyen | ✅ nouveau |
 | **B2** | **Enrichir le system prompt stable** (au lieu de le réduire) | au-dessus du seuil, un system stable + gros ne coûte rien en relecture mais couvre plus de contexte → moins d'input neuf | contre-intuitif, à mesurer | ✅ nouveau |
 | **B3** | **Anchoring du 1er message** | bloc contexte canonique réutilisable entre sessions du même projet | moyen | variante de H3 (angle inter-sessions) |
@@ -186,8 +187,12 @@ Coût total d'une session, cwd dans le system (A) vs au 1er message (B) :
 
 **A3 est déjà testé (prototype)** : extension `rewrite-bash-output.ts` (hook `tool_result`), testée sur opencode-go — **−38 % du coût du tour** sur un `ls -la` réel (28 231 → 17 446 tokens input), qualité préservée (l'agent répond correctement au détail demandé). Détail : `.research/resultats/PROTOTYPE-P1-REWRITE.md`.
 
-**Priorité de test restante** : (a) généraliser A3 sur des sessions complètes (N≥5, vérifier non-régression qualité), (b) étendre aux gros `read` de fichiers (559 résultats >2k — le 2e gros producteur) avec la stratégie A1 (résumé + hash), (c) mesurer B1 (neutralisation → création de hits entre exécutions). Coût ~1-2 $.
+**A2 est déjà testé (prototype)** : extension `dedupe-reads.ts` (hash MD5 + store persistant + détection de préfixe) — sur les sessions réelles, **72 % des gros résultats en double éliminés = 85 % du volume** (9.66 M chars sur 11.4 M). Qualité préservée (l'agent répond précisément à partir de la référence, le contenu étant dans l'historique). Combiné A2+A3 sur un scénario mixte : **−35 % du coût** (30 600 → 19 588 tokens). Détail : `.research/resultats/PROTOTYPE-P2-DEDUPE.md`.
+
+**Sur l'embedding (proposition écartée par les données)** : les doublons réels sont **bit-identiques à 100 %** (le même fichier relu 175×), les « presque identiques » sont des **lectures partielles** (préfixes) — un hash exact + test de préfixe les couvre tous à coût nul. Le cache API étant bit-exact, la similarité sémantique n'aide pas ; et paraphraser du contenu technique (fichiers, chemins) casserait l'information.
+
+**Priorité de test restante** : (a) généraliser A2+A3 sur des sessions complètes (N≥5, non-régression qualité), (b) mesurer B1 (neutralisation → création de hits entre exécutions du même ls), (c) valider le seuil optimal et la politique du store. Coût ~1-2 $.
 
 ---
 
-*Fichiers : `README.md` (synthèse) · `.research/resultats/BASELINE-QUANTITATIVE.md` (chiffres) · `.research/resultats/IDEES-HORS-SENTIER.md` (pistes novatrices) · `.research/resultats/PROTOTYPE-P1-REWRITE.md` (prototype A3 validé) · `.research/resultats/RAPPORT-EXPERIENCES.md` (E0-E10) · `docs/05-protocoles-experimentaux-et-predictions.md` (protocoles) · `results/` (traces brutes).*
+*Fichiers : `README.md` (synthèse) · `.research/resultats/BASELINE-QUANTITATIVE.md` (chiffres) · `.research/resultats/IDEES-HORS-SENTIER.md` (pistes novatrices) · `.research/resultats/PROTOTYPE-P1-REWRITE.md` (A3 validé) · `.research/resultats/PROTOTYPE-P2-DEDUPE.md` (A2 validé + réponse embedding) · `.research/resultats/RAPPORT-EXPERIENCES.md` (E0-E10) · `docs/05-protocoles-experimentaux-et-predictions.md` (protocoles) · `results/` (traces brutes).*
