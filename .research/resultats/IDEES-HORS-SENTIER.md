@@ -84,10 +84,29 @@
 
 ## E · Ce qui est vraiment « out of the box » (à creuser en priorité)
 
-1. **A3 (réécrire les sorties bash en format dense)** — le plus grand gisement mesuré. Personne ne le fait : opencode *tronque*, personne ne *réécrit* la sortie pour la rendre informative ET compacte. **Déjà testé (prototype)** : −38 % du coût du tour sur un `ls -la` réel, qualité parfaite (voir `PROTOTYPE-P1-REWRITE.md`). Reste à généraliser sur sessions complètes N≥5.
+1. **A3 (réécrire les sorties bash en format dense)** — **⚠️ REVU après découverte RTK** : l'outil [rtk](https://github.com/rtk-ai/rtk) (déjà actif dans le pi de prod via l'extension `pi-rtk`) fait déjà −45 % sur un `ls -la` (vs notre A3 −49 %). → **A3 est largement redondant avec RTK sur les commandes qu'il sait réécrire** (`ls`, `cat`→`read`, `git`, `find`). Ne pas implémenter comme extension séparée ; RTK couvre le cas. Le seul résidu utile : notre hook aval (`tool_result`) couvre aussi les sorties que RTK ne réécrit pas (commandes natives, scripts, sous-shell), mais c'est un cas plus rare.
 2. **A1 (résumé + signature + récupération à la demande)** — transforme la perte d'info de la troncature en choix conscient : on peut toujours re-demander le plein via le hash. À étendre aux gros `read` (559 résultats >2k = 2e gisement).
 3. **B1 (neutraliser timestamps/paths dans les tool results)** — rend des préfixes « presque identiques » vraiment identiques. C'est la seule idée qui **crée** des hits là où il n'y en a pas (les autres évitent des misses). Implémenté, à mesurer.
 4. **B2 (enrichir le system au lieu de le réduire)** — contre-intuitif : au-dessus du seuil, un system stable plus gros ne coûte rien en relecture mais couvre plus de contexte → moins d'input neuf. Inverser le réflexe « moins = mieux ».
+
+## E-ter · Découverte RTK (impact sur nos prototypes)
+
+**RTK fait déjà une partie de ce qu'on a construit** — et il est déjà actif dans l'environnement :
+
+| Capacité | RTK (actif) | Nos prototypes | Verdict |
+|---|---|---|---|
+| Réécrire `ls`/`git`/`cat`/`find` en sortie compacte | ✅ **−45 %** sur ls | A3 : −49 % | **Redondant** → A3 ne s'implémente pas séparément |
+| Réécrire le résultat *quelle que soit la commande* (hook aval) | ❌ (RTK réécrit la commande en amont) | A3 : ✅ | Complémentaire, cas rare |
+| **Dédupliquer les relectures de fichiers** (hash + préfixe) | ❌ **non** | A2 : ✅ 72 % des doublons | **Le vrai complément, pas redondant** |
+| Couvrir l'outil `read` natif de pi (2e gisement) | ❌ (ne réécrit que `cat`) | A2 : ✅ | Complémentaire |
+| Neutraliser timestamps (B1) | partiel | B1 : ✅ | à vérifier |
+
+**Points vérifiés** :
+- Le bac à sable `.pi-test/` n'a **aucune extension** (`extensions: []`) → nos mesures baseline/prototypes ne sont **pas contaminées** par RTK.
+- `pi-rtk` est actif dans le pi de prod (`settings.json`) → les commandes bash des agents passent déjà par RTK quand il sait les réécrire.
+- `rtk rewrite` réécrit : `ls -la`→`rtk ls -la`, `cat X`→`rtk read X`, `git status`→`rtk git status`, `find`→`rtk find`. N'écrit **rien** pour `npm test`, etc.
+
+**Conséquence pour la suite** : concentrer l'effort sur **A2 (déduplication)** — c'est le seul apport réel non couvert par RTK, sur le plus grand gisement mesuré (93 % du volume des gros résultats en double).
 
 ## E-bis · Réponse à la question « hashmap de caractères pour compresser ? »
 

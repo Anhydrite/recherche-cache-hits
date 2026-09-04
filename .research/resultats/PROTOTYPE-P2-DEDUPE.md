@@ -71,3 +71,19 @@ Testé et **écarté par les données** :
 - Le cache API est **bit-exact** : 2 textes « similaires à 95 % » ne matchent jamais. L'embedding n'aide pas le cache, seulement une éventuelle déduplication approximative qui n'existe pas dans nos données.
 - Coût/risque : appel API par résultat + risque de fausse unification.
 → **L'embedding est la mauvaise brique ici** ; le hash exact + préfixe couvre 100 % des cas mesurés à 0 $.
+
+## Addendum — Test à l'échelle session (après correction du bug de format)
+
+**Bug corrigé** : le retour `{ content: <string> }` plantait sur l'outil `read` (pi attend un tableau de blocs) → corrigé en `{ content: [{ type:'text', text }] }`. Le `read` natif de pi est le 2e gros producteur de doublons (559 résultats >2k), donc cette correction est essentielle.
+
+**Test A/B (session fraîche relisant un fichier déjà dans le store) :**
+
+| | Sans A2 (1er read) | Avec A2 (relecture) |
+|---|---|---|
+| Input total | 2 137 tokens | 1 580 tokens |
+| Relecture dédupliquée | — | ✅ 6 252 chars remplacés par référence |
+| Qualité | — | ✅ l'agent cite correctement le micro-levier n°2 depuis la référence |
+
+**À l'échelle des sessions longues (mesure P3 élargie)** : les sessions avec gros volume de tool results (>50k chars) ont **49-79 % de doublons intra-session** (le même fichier relu dans la session). Les sessions >200k chars : 69 % en moyenne. → A2 a un **vrai potentiel sur les sessions longues/multi-agents**, pas sur les sessions courtes.
+
+**Limite identifiée (importante)** : quand l'agent reçoit la référence seule (contenu pas dans son contexte immédiat), il peut **relire par fragments** (`sed`, `head`, `cat`) pour retrouver l'info — ce qui peut annuler une partie du gain. Atténuations possibles : (a) inclure plus de contexte dans la référence (tête + sections clés), (b) ne dédupliquer que si le contenu est encore dans la fenêtre récente, (c) marquer la référence avec le chemin pour un `read` ciblé rapide.

@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
       if (known) {
         deduped++;
         savedChars += text.length;
-        return { content: buildRef(known, false) };
+        return { content: [{ type: "text", text: buildRef(known, false) }] };
       }
 
       // 2. Préfixe d'un contenu connu (lecture partielle d'un fichier déjà lu complet)
@@ -114,7 +114,7 @@ export default function (pi: ExtensionAPI) {
           if (text.startsWith(entry.head.slice(0, 200))) {
             deduped++;
             savedChars += text.length;
-            return { content: buildRef(entry, true) };
+            return { content: [{ type: "text", text: buildRef(entry, true) }] };
           }
         }
       }
