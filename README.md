@@ -139,3 +139,13 @@ En complément du travail expérimental, une **recherche multi-agents en 5 phase
 - **P1** : warmup, keepalive probabiliste, suffixe minimal, ordonnancement anti-miss
 - **P2** : compaction douce préservant le préfixe
 
+
+## 🎯 Micro-leviers (petits gains cumulés)
+
+Après validation expérimentale, les gros leviers sont déclassés (P0-A borné, P0-C inutile, P1-D nocif). Les opportunités restantes sont des **petits gains cumulés** : `.research/resultats/MICRO-LEVIERS.md`
+
+**Priorité** :
+1. **Troncature des tool results** (−30-45% tokens relus/tour) — à tester en premier
+2. Descriptions d'outils courtes (−300-500 tok/tour fixe)
+3. Compaction historique (sessions très longues)
+4. Rebuilds conditionnels (P0-A, si fréquents sur ton usage)
