@@ -1,0 +1,11 @@
+# Sécurité : NE JAMAIS pousser les credentials ni les sessions
+.pi-test/
+.pi/
+
+# Traces brutes (volumineuses + internes) — garder seulement les rapports
+*.jsonl
+*.json
+
+# OS / éditeurs
+.DS_Store
+*.swp
