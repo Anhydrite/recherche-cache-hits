@@ -159,9 +159,35 @@ Coût total d'une session, cwd dans le system (A) vs au 1er message (B) :
 | 5 | Deux comportements actuels sont déjà optimaux | breakpoint dernier message (91.9 %), resume bit-identique (hit conservé) | documenter, ne pas toucher |
 | 6 | Le seul vrai bug trouvé | sur modèles explicites (claude), le dernier outil n'est pas marqué pour le cache | corriger quand un accès claude sera disponible (bloqué par le plan aujourd'hui) |
 | 7 | **Méthode** | un résultat doit se confirmer sur 2 providers avec gros contexte, sinon c'est du bruit | appliquer pour la suite |
+| 8 | **Premier levier à gain démontré : réécrire les sorties bash** | −38 % du coût du tour sur un `ls -la` réel, qualité préservée (prototype A3 validé) | généraliser sur sessions complètes + étendre aux gros `read` |
 
-**Prochaine étape concrète** : implémenter et mesurer la **troncature des résultats d'outils** (extension + driver, ~0.5-1 $) — c'est la seule optimisation qui agit sur le poste qui coûte vraiment.
+**Prochaine étape concrète** : implémenter et mesurer la **troncature des résultats d'outils** (extension + driver, ~0.5-1 $) — c'est la seule optimisation « classique » qui agit sur le poste qui coûte vraiment.
 
 ---
 
-*Fichiers : `README.md` (synthèse) · `.research/resultats/BASELINE-QUANTITATIVE.md` (chiffres détaillés) · `.research/resultats/RAPPORT-EXPERIENCES.md` (E0-E10) · `docs/05-protocoles-experimentaux-et-predictions.md` (protocoles) · `results/` (traces brutes).*
+## 6 · Pistes hors-sentier (réécrire le contenu pour le cache)
+
+> La recherche ci-dessus traite de **structure** (où placer les blocs : geler, appendre, breakpoints). Les pistes suivantes sont **plus novatrices : réécrire le contenu lui-même** pour qu'il serve mieux le cache. Détail complet : `.research/resultats/IDEES-HORS-SENTIER.md`.
+
+**Le gisement (mesuré)** : dans une session réelle, **8 % des résultats d'outils = 62 % des caractères**. Exemples réels : `ls -la` = **28-31 000 chars** (245 entrées × ~110 chars de métadonnées), doc relue = **24 789 chars**, dump bash = **28 274 chars**. Ce sont des tokens payés plein tarif, réécrivables intelligemment.
+
+| # | Idée (réécrire le contenu) | Quoi | Gain estimé | Nouveau vs recherche ? |
+|---|---|---|---|---|
+| **A3** | **Réécrire les sorties bash en format dense** | `ls -la` → **liste compacte de noms** (~30 chars/entrée au lieu de 110), logs répétitifs → comptage | **✅ PROTOTYPE VALIDÉ : −38 % du coût du tour** (28 231→17 446 tokens sur un ls réel), qualité parfaite | ✅ nouveau (opencode tronque, personne ne réécrit) |
+| **A1** | **Résumé + signature + récupération à la demande** | remplacer le résultat long par en-tête + utile + hash ; relire le plein via le hash si besoin | élevé | ✅ nouveau (troncature améliorée, sans perte) |
+| **B1** | **Neutraliser timestamps/paths/ordre dans les résultats** | `Sep 4 12:01` → `[ts]`, trier les listes : 2 exécutions du même `ls` = mêmes octets | moyen (crée des hits là où il n'y en a pas) | ✅ nouveau |
+| **A2** | **Dédupliquer les blocs identiques** entre résultats | même contenu relu → 1× + `<voir résultat #k>` | moyen | ✅ nouveau |
+| **A4** | **Marqueurs « déjà-vu »** | annoter le contenu déjà présent plutôt que le recopier | moyen | ✅ nouveau |
+| **B2** | **Enrichir le system prompt stable** (au lieu de le réduire) | au-dessus du seuil, un system stable + gros ne coûte rien en relecture mais couvre plus de contexte → moins d'input neuf | contre-intuitif, à mesurer | ✅ nouveau |
+| **B3** | **Anchoring du 1er message** | bloc contexte canonique réutilisable entre sessions du même projet | moyen | variante de H3 (angle inter-sessions) |
+| **C1** | **Normalisation progressive** (≠ compaction-résumé) | compacter mécaniquement les vieux résultats (ls→arbre) sans changer leur rôle | élevé (longues sessions) | variante de I-08/e1 |
+
+**Pourquoi c'est différent de tout ce qui précède** : les optimisations 1-9 du §2 agissent sur des tokens **déjà en cache** (donc presque gratuits) ou coupent l'information. A3/B1 agissent sur des tokens **payés plein tarif** et les **réécrivent pour qu'ils soient à la fois plus petits ET réutilisables** (un `ls` sans timestamp peut matcher un `ls` futur). C'est le seul axe qui combine « moins de coût » et « plus de hits ».
+
+**A3 est déjà testé (prototype)** : extension `rewrite-bash-output.ts` (hook `tool_result`), testée sur opencode-go — **−38 % du coût du tour** sur un `ls -la` réel (28 231 → 17 446 tokens input), qualité préservée (l'agent répond correctement au détail demandé). Détail : `.research/resultats/PROTOTYPE-P1-REWRITE.md`.
+
+**Priorité de test restante** : (a) généraliser A3 sur des sessions complètes (N≥5, vérifier non-régression qualité), (b) étendre aux gros `read` de fichiers (559 résultats >2k — le 2e gros producteur) avec la stratégie A1 (résumé + hash), (c) mesurer B1 (neutralisation → création de hits entre exécutions). Coût ~1-2 $.
+
+---
+
+*Fichiers : `README.md` (synthèse) · `.research/resultats/BASELINE-QUANTITATIVE.md` (chiffres) · `.research/resultats/IDEES-HORS-SENTIER.md` (pistes novatrices) · `.research/resultats/PROTOTYPE-P1-REWRITE.md` (prototype A3 validé) · `.research/resultats/RAPPORT-EXPERIENCES.md` (E0-E10) · `docs/05-protocoles-experimentaux-et-predictions.md` (protocoles) · `results/` (traces brutes).*
