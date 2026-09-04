@@ -1,8 +1,8 @@
 # Recherche Cache-Hits dans pi — ce que valent vraiment les optimisations
 
 > **Question** : le cache API fonctionne-t-il déjà bien dans pi (earendil-works), et quelles optimisations valent la peine d'être implémentées ?
-> **Réponse courte** : le cache marche déjà très bien (le hit-rate atteint **~91 %** : 91 % des tokens d'entrée sont relus depuis le cache au lieu d'être re-payés). Une session de dev coûte **~0.1 à 3 cents**. La plupart des optimisations « connues » ne font rien gagner (bruit ou poste déjà gratuit). **Le seul levier qui peut vraiment réduire la facture : couper les résultats d'outils trop longs** (−30-45 % du poste résultats d'outils, soit ~12-18 % du coût d'une session d'édition).
-> **Mesures** : 2 114 tours sur 126 sessions réelles (traces `results/`), providers commandcode + opencode-go, modèle deepseek-v4-flash · **Date** : septembre 2026 · Détail complet : `.research/resultats/BASELINE-QUANTITATIVE.md`
+> **Réponse courte** : le cache marche déjà très bien (hit-rate **~91 %** : 91 % des tokens d'entrée sont relus depuis le cache, 31× moins cher que du nouveau). Une session de dev coûte **~0.1 à 3 cents**. La plupart des optimisations « connues » (geler le system, sortir le cwd, warmup, TTL long) ne font rien gagner — elles agissent sur un poste déjà gratuit. **Les seuls gains démontrés** : réécrire les résultats d'outils longs (déjà couvert par **rtk** en prod, −45 % sur un ls) et surtout **dédupliquer les relectures** (72 % des doublons éliminés = 85 % du volume sur les gros résultats — le vrai apport non couvert). Détail : sections 2 et 6.
+> **Mesures** : 2 114 tours sur 126 sessions réelles (traces `results/`) + 523 sessions analysées, providers commandcode + opencode-go, modèle deepseek-v4-flash · **Date** : septembre 2026 · Chiffres détaillés : `.research/resultats/BASELINE-QUANTITATIVE.md`
 
 ---
 
@@ -38,7 +38,7 @@
 | Le system prompt entier relu à chaque tour | **2 %** | **quasi gratuit** |
 
 → **Conséquence n°1** : les optimisations qui réorganisent le « system prompt » (geler, déplacer le cwd, etc.) jouent sur **2 % du coût**. Même parfaites, elles ne peuvent pas économiser grand-chose.
-→ **Conséquence n°2** : les résultats d'outils sont payés **plein tarif** quand ils sont créés (64 % du coût). Les **tronquer** est le seul levier à fort potentiel.
+→ **Conséquence n°2** : les résultats d'outils sont payés **plein tarif** quand ils sont créés (64 % du coût). Les **réécrire/dédupliquer** (A3/A2, §6) est le seul axe à gain démontré.
 
 ---
 
@@ -54,11 +54,11 @@
 | **4** | **TTL long** : garder le cache plus longtemps (P0-C) | pause de 5.5 min entre 2 tours | le cache **survit déjà** (0 perdu) | identique | **0.00** sur ce provider | ❌ **Inutile ici** (le cache survit > 5 min). Peut servir sur des providers stricts non testés. |
 | **5** | **Breakpoint « dernier message »** (H2) | boucle d'outils intra-tour | **91.9 %** de hit | — | déjà optimal | ✅ **Rien à faire**, le comportement actuel est le bon |
 | **6** | **Reprise de session** bit-identique (H6) | `pi resume` | le cache **survit** à la reprise (hit total) | — | déjà bon | ✅ **Rien à faire** |
-| **7** | **Tronquer les résultats d'outils** trop longs (micro-levier n°1) — *non encore testé* | résultats d'outils = ~70 % de l'input nouveau (le poste payé plein tarif) | — | **estimation** : −30-45 % sur ce poste | **~0.35-0.5 cent par session d'édition** (~12-18 % de la facture) | 🔥 **Seul vrai levier restant — à tester** (protocole prêt, ~0.5-1 $) |
+| **7** | **Tronquer/réécrire les résultats d'outils** longs | résultats d'outils = ~70 % de l'input nouveau (poste payé plein tarif) | — | **A3 testé : −38 % du tour ls** · **A2 testé : 72 % des doublons** (voir §6) | à mesurer précisément | 🔥 **Le seul axe à gain démontré** — cf. §6 |
 | 8 | Descriptions d'outils plus courtes (micro-levier n°2) | footprint fixe des outils | relu en cache | −300-500 tok/tour… **en cache** | **≈ 0.01 cent/session** | ❌ **Déclassé par la baseline** (c'était annoncé « −300-500 tok », mais ces tokens sont relus en cache = presque gratuits) |
 | 9 | Compaction de l'historique (micro-levier n°3) | très longues sessions | historique relu en cache | préfixe plus court | faible (agit sur la relecture, déjà bon marché) | ⚠️ Utile seulement si le contexte approche la limite de la fenêtre du modèle |
 
-**En une phrase** : les optimisations « de préfixe » (1, 2, 3, 4, 8) agissent sur des tokens **relus en cache = déjà presque gratuits** ; la seule qui agit sur des tokens **payés plein tarif** est la **troncature des résultats d'outils** (7).
+**En une phrase** : les optimisations « de préfixe » (1, 2, 3, 4, 8) agissent sur des tokens **relus en cache = déjà presque gratuits** ; les seuls gains démontrés (A3, A2 — §6) agissent sur les tokens **payés plein tarif** (résultats d'outils longs et relectures).
 
 ---
 
@@ -154,15 +154,15 @@ Coût total d'une session, cwd dans le system (A) vs au 1er message (B) :
 |---|---|---|---|
 | 1 | **Le cache fonctionne déjà très bien** | hit-rate ~91 % (la plupart des tokens d'entrée sont relus en cache, 31× moins cher que du nouveau) | rien |
 | 2 | **Le coût réel est minuscule** | une session ≈ 0.1-3 cents | garder cet ordre de grandeur avant de chasser chaque centime |
-| 3 | **L'argent est dans les résultats d'outils, pas dans le system prompt** | 64 % du coût = texte nouveau (dont ~70 % de résultats d'outils) ; le system relu = 2 % | **tester la troncature des résultats d'outils** (−30-45 % du poste, ~0.35-0.5 cent/session) |
+| 3 | **L'argent est dans les résultats d'outils, pas dans le system prompt** | 64 % du coût = texte nouveau (dont ~70 % de résultats d'outils) ; le system relu = 2 % | **agir sur les résultats d'outils longs et les relectures** (A2/A3, §6) |
 | 4 | Les optimisations « de préfixe » sont sans objet | geler le system (0.03 c/rebuild), sortir le cwd (0), TTL long (0), warmup (négatif) | ne pas implémenter (sauf P0-A si usage très dynamique en outils) |
 | 5 | Deux comportements actuels sont déjà optimaux | breakpoint dernier message (91.9 %), resume bit-identique (hit conservé) | documenter, ne pas toucher |
 | 6 | Le seul vrai bug trouvé | sur modèles explicites (claude), le dernier outil n'est pas marqué pour le cache | corriger quand un accès claude sera disponible (bloqué par le plan aujourd'hui) |
 | 7 | **Méthode** | un résultat doit se confirmer sur 2 providers avec gros contexte, sinon c'est du bruit | appliquer pour la suite |
-| 8 | **Premier levier à gain démontré : réécrire les sorties bash** | −38 % du coût du tour sur un `ls -la` réel, qualité préservée (prototype A3 validé) | généraliser sur sessions complètes + étendre aux gros `read` |
-| 9 | **Déduplication des relectures (A2)** | 72 % des gros résultats en double éliminés (85 % du volume), qualité préservée | combiné A2+A3 : −35 % du coût sur scénario mixte |
+| 8 | **La réécriture des sorties (A3) est déjà couverte par RTK** | RTK (actif via pi-rtk) fait −45 % sur un ls, autant que notre prototype | **ne pas ré-implémenter A3** — RTK le fait |
+| 9 | **Le vrai apport restant : déduplication des relectures (A2)** | 72 % des gros résultats en double éliminés = 85 % du volume ; RTK ne le fait pas | **généraliser A2** sur sessions longues (49-79 % de doublons) |
 
-**Prochaine étape concrète** : implémenter et mesurer la **troncature des résultats d'outils** (extension + driver, ~0.5-1 $) — c'est la seule optimisation « classique » qui agit sur le poste qui coûte vraiment.
+**Prochaine étape concrète** : généraliser **A2 (déduplication des relectures)** sur des sessions longues réelles (N≥5) pour mesurer le gain de bout en bout — c'est le seul apport non couvert par RTK, sur le plus grand gisement (49-79 % de doublons sur sessions >50k chars).
 
 ---
 
@@ -172,27 +172,54 @@ Coût total d'une session, cwd dans le system (A) vs au 1er message (B) :
 
 **Le gisement (mesuré)** : dans une session réelle, **8 % des résultats d'outils = 62 % des caractères**. Exemples réels : `ls -la` = **28-31 000 chars** (245 entrées × ~110 chars de métadonnées), doc relue = **24 789 chars**, dump bash = **28 274 chars**. Ce sont des tokens payés plein tarif, réécrivables intelligemment.
 
-| # | Idée (réécrire le contenu) | Quoi | Gain estimé | Nouveau vs recherche ? |
+| # | Idée (réécrire le contenu) | Quoi | Gain | Statut |
 |---|---|---|---|---|
-| **A3** | **Réécrire les sorties bash en format dense** | `ls -la` → **liste compacte de noms** (~30 chars/entrée au lieu de 110), logs répétitifs → comptage | **✅ PROTOTYPE VALIDÉ : −38 % du coût du tour** (28 231→17 446 tokens sur un ls réel), qualité parfaite | ✅ nouveau (opencode tronque, personne ne réécrit) |
-| **A1** | **Résumé + signature + récupération à la demande** | remplacer le résultat long par en-tête + utile + hash ; relire le plein via le hash si besoin | élevé | ✅ nouveau (troncature améliorée, sans perte) |
-| **B1** | **Neutraliser timestamps/paths/ordre dans les résultats** | `Sep 4 12:01` → `[ts]`, trier les listes : 2 exécutions du même `ls` = mêmes octets | moyen (crée des hits là où il n'y en a pas) | ✅ nouveau |
-| **A2** | **Dédupliquer les blocs identiques** entre résultats | même contenu relu (hash exact ou préfixe) → 1× + référence `<déjà lu — N chars>` | **✅ PROTOTYPE VALIDÉ : 72 % des gros résultats en double éliminés (85 % du volume)** | ✅ nouveau (l'embedding proposé est écarté : doublons 100 % bit-identiques, hash suffit) |
-| **A4** | **Marqueurs « déjà-vu »** | annoter le contenu déjà présent plutôt que le recopier | moyen | ✅ nouveau |
-| **B2** | **Enrichir le system prompt stable** (au lieu de le réduire) | au-dessus du seuil, un system stable + gros ne coûte rien en relecture mais couvre plus de contexte → moins d'input neuf | contre-intuitif, à mesurer | ✅ nouveau |
-| **B3** | **Anchoring du 1er message** | bloc contexte canonique réutilisable entre sessions du même projet | moyen | variante de H3 (angle inter-sessions) |
-| **C1** | **Normalisation progressive** (≠ compaction-résumé) | compacter mécaniquement les vieux résultats (ls→arbre) sans changer leur rôle | élevé (longues sessions) | variante de I-08/e1 |
+| **A3** | **Réécrire les sorties bash en format dense** | `ls -la` → **liste compacte de noms** (~30 chars/entrée au lieu de 110) | **−38 % du coût du tour** sur un ls réel (prototype testé) | ⚠️ **Redondant avec RTK** (déjà actif, fait −45 %) — voir ci-dessous |
+| **A2** | **Dédupliquer les relectures** (hash + store) | même contenu relu → 1× + référence `<déjà lu — N chars>` | **72 % des doublons éliminés = 85 % du volume** (prototype testé) | ✅ **Le vrai apport** (RTK ne le fait pas) |
+| **A1** | **Résumé + signature + récupération à la demande** | remplacer le résultat long par en-tête + utile + hash | élevé (à tester) | 🔲 à tester |
+| **B1** | **Neutraliser timestamps/paths** dans les résultats | `Sep 4 12:01` → `[ts]` : 2 exécutions du même `ls` = mêmes octets | moyen (crée des hits) | 🔲 implémenté, à mesurer |
+| **B2** | **Enrichir le system prompt stable** (au lieu de le réduire) | au-dessus du seuil, un system stable + gros couvre plus de contexte → moins d'input neuf | contre-intuitif, à mesurer | 🔲 à tester |
+| **A4 / B3 / C1** | Marqueurs « déjà-vu », anchoring, normalisation progressive | — | moyen | 🔲 pistes |
 
 **Pourquoi c'est différent de tout ce qui précède** : les optimisations 1-9 du §2 agissent sur des tokens **déjà en cache** (donc presque gratuits) ou coupent l'information. A3/B1 agissent sur des tokens **payés plein tarif** et les **réécrivent pour qu'ils soient à la fois plus petits ET réutilisables** (un `ls` sans timestamp peut matcher un `ls` futur). C'est le seul axe qui combine « moins de coût » et « plus de hits ».
 
-**A3 est déjà testé (prototype)** : extension `rewrite-bash-output.ts` (hook `tool_result`), testée sur opencode-go — **−38 % du coût du tour** sur un `ls -la` réel (28 231 → 17 446 tokens input), qualité préservée (l'agent répond correctement au détail demandé). Détail : `.research/resultats/PROTOTYPE-P1-REWRITE.md`.
+### 6.1 Découverte importante : RTK fait déjà une partie (A3 redondant)
 
-**A2 est déjà testé (prototype)** : extension `dedupe-reads.ts` (hash MD5 + store persistant + détection de préfixe) — sur les sessions réelles, **72 % des gros résultats en double éliminés = 85 % du volume** (9.66 M chars sur 11.4 M). Qualité préservée (l'agent répond précisément à partir de la référence, le contenu étant dans l'historique). Combiné A2+A3 sur un scénario mixte : **−35 % du coût** (30 600 → 19 588 tokens). Détail : `.research/resultats/PROTOTYPE-P2-DEDUPE.md`.
+L'outil **rtk** (github.com/rtk-ai/rtk), déjà actif dans le pi de prod via l'extension `pi-rtk`, réécrit les commandes bash pour compresser leur sortie. Comparé à nos prototypes :
 
-**Sur l'embedding (proposition écartée par les données)** : les doublons réels sont **bit-identiques à 100 %** (le même fichier relu 175×), les « presque identiques » sont des **lectures partielles** (préfixes) — un hash exact + test de préfixe les couvre tous à coût nul. Le cache API étant bit-exact, la similarité sémantique n'aide pas ; et paraphraser du contenu technique (fichiers, chemins) casserait l'information.
+| Capacité | RTK (déjà actif) | Nos prototypes | Verdict |
+|---|---|---|---|
+| Réécrire `ls`/`git`/`cat`/`find` en sortie compacte | ✅ **−45 %** sur un ls | A3 : −49 % | ⚠️ **Redondant** — A3 ne s'implémente pas séparément |
+| **Dédupliquer les relectures de fichiers** (hash + préfixe) | ❌ ne le fait pas | A2 : ✅ 72 % des doublons | ✅ **A2 est le vrai complément** |
+| Couvrir l'outil `read` natif de pi (2e gisement) | ❌ (ne réécrit que `cat`) | A2 : ✅ | ✅ Complémentaire |
+| Réécrire le résultat *quelle que soit la commande* (hook aval) | ❌ (réécrit la commande en amont) | A3 : ✅ | ~ cas rare |
 
-**Priorité de test restante** : (a) généraliser A2+A3 sur des sessions complètes (N≥5, non-régression qualité), (b) mesurer B1 (neutralisation → création de hits entre exécutions du même ls), (c) valider le seuil optimal et la politique du store. Coût ~1-2 $.
+**Vérifié** : le bac à sable `.pi-test/` n'a aucune extension → nos mesures ne sont pas contaminées. `pi-rtk` est actif en prod (`settings.json`). `rtk rewrite` couvre `ls`, `cat`, `git`, `find` — pas `npm test`, etc.
+
+**Conséquence** : concentrer l'effort sur **A2 (déduplication)** — le seul apport non couvert, sur le plus grand gisement.
+
+### 6.2 A2 à l'échelle : la déduplication vaut le coup sur les sessions longues
+
+| Volume de tool results / session | Doublons intra-session |
+|---|---|
+| < 50k chars (sessions courtes) | ~0 % |
+| 50-200k chars | **49 %** |
+| > 200k chars | **69 %** |
+
+→ Sur une session de 100k+ tokens (multi-agents, recherche, long refactor), **la moitié à deux-tiers du volume des gros résultats est du contenu déjà vu** dans la même session. C'est là que A2 déploie son effet (le même fichier relu 175× dans nos traces).
+
+**Sur la « hashmap de blocs similaires » (proposition explorée)** : un hashmap de *caractères* ne marche pas (le tokenizer BPE compresse déjà les répétitions de caractères — `AAAA…` ≈ 2-3 tokens, pas N). Un hashmap de *blocs sémantiques intra-résultat* ne rapporte que **0.2 %** (mesuré sur 11.4 M chars : les répétitions dans un même résultat sont des séparateurs courts `---` ou des artefacts). Le gisement est **inter-résultats** (le même fichier relu) — exactement ce que A2 attrape. → l'embedding est inutile ici (doublons 100 % bit-identiques, hash exact suffit).
+
+### 6.3 Prototypes validés
+
+**A3 testé** (extension `rewrite-bash-output.ts`, hook `tool_result`) : **−38 % du coût du tour** sur un `ls -la` réel (28 231 → 17 446 tokens), qualité préservée. ⚠️ Redondant avec RTK sur les commandes couvertes. Détail : `PROTOTYPE-P1-REWRITE.md`.
+
+**A2 testé** (extension `dedupe-reads.ts`, hash MD5 + store persistant + détection de préfixe) : sur les sessions réelles, **72 % des gros résultats en double éliminés = 85 % du volume** (9.66 M chars). Qualité préservée (l'agent répond depuis la référence). Test A/B : relecture de 6 252 chars dédupliquée, agent correct. Combiné A2+A3 : **−35 % du coût** sur scénario mixte. Détail : `PROTOTYPE-P2-DEDUPE.md`.
+
+**Limite connue de A2** : si le contenu dédupliqué n'est pas dans le contexte immédiat, l'agent peut relire par fragments (`sed`/`head`) — à atténuer (référence plus riche, ne dédupliquer que si contenu récent).
+
+**Priorité restante** : (a) généraliser A2 sur sessions complètes N≥5, (b) mesurer B1 (création de hits entre exécutions du même ls), (c) valider seuil et politique du store. Coût ~1-2 $.
 
 ---
 
-*Fichiers : `README.md` (synthèse) · `.research/resultats/BASELINE-QUANTITATIVE.md` (chiffres) · `.research/resultats/IDEES-HORS-SENTIER.md` (pistes novatrices) · `.research/resultats/PROTOTYPE-P1-REWRITE.md` (A3 validé) · `.research/resultats/PROTOTYPE-P2-DEDUPE.md` (A2 validé + réponse embedding) · `.research/resultats/RAPPORT-EXPERIENCES.md` (E0-E10) · `docs/05-protocoles-experimentaux-et-predictions.md` (protocoles) · `results/` (traces brutes).*
+*Fichiers : `README.md` (synthèse) · `.research/resultats/BASELINE-QUANTITATIVE.md` (chiffres) · `.research/resultats/IDEES-HORS-SENTIER.md` (pistes + découverte RTK) · `.research/resultats/PROTOTYPE-P1-REWRITE.md` (A3, redondant avec RTK) · `.research/resultats/PROTOTYPE-P2-DEDUPE.md` (A2, le vrai apport) · `.research/resultats/RAPPORT-EXPERIENCES.md` (E0-E10) · `.research/extensions/` (prototypes) · `docs/05-protocoles-experimentaux-et-predictions.md` (protocoles) · `results/` (traces brutes).*
