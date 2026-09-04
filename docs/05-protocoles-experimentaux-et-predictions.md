@@ -772,3 +772,49 @@ Le protocole multi-scénarios + repos égalisés a exactement rempli son rôle :
 - ➡️ Reste à tester en priorité : **H4** (hybride exclude tool results — le seul levier de latence/coût potentiellement significatif restant)
 
 ---
+
+---
+
+## PARTIE 8 — H4 : constat d'INAPPLICABILITÉ (cache implicite)
+
+> **Résultat important** : l'hypothèse H4 (exclure les tool results du cache quand la conversation dépasse le system — la stratégie gagnante du papier « Don't Break the Cache » pour GPT-5.2) **n'est PAS testable sur les providers accessibles**, et ce pour une raison structurelle.
+
+### 8.1 Vérification de la sémantique de cache par provider (mesurée sur payload réel)
+
+| Provider / modèle | cache_control émis ? | Sémantique |
+|---|---|---|
+| opencode-go / deepseek-v4-flash | **non** | cache **implicite** (préfixe automatique) |
+| commandcode / deepseek-v4-flash | **non** | cache implicite |
+| commandcode / gpt-5.6-sol | **non** | cache implicite |
+| commandcode / claude-sonnet-5 | **oui** (system + dernier message) | cache **explicite** (breakpoints) — **mais bloqué : MODEL_NOT_IN_PLAN** |
+| commandcode / claude-fable-5, claude-haiku | oui | explicite — bloqués (plan) |
+
+**Structure du payload mesurée** :
+- Cache implicite : `system` est un message `role:system` ; pas de `cache_control` ; dernier message `role:tool`.
+- Cache explicite (Claude sur commandcode) : `system` séparé + `cache_control` sur system[0] et dernier message.
+
+### 8.2 Conclusion : H4 inapplicable dans cet environnement
+
+La stratégie « exclude tool results » nécessite de **déplacer les breakpoints** pour exclure la queue de conversation du cache. Or :
+1. Les providers accessibles (opencode-go, commandcode/deepseek/gpt) sont en **cache implicite** — le client ne peut PAS contrôler la frontière du cache ; le provider matche tout le préfixe automatiquement.
+2. Les seulement modèles avec breakpoints (Claude) sont **bloqués par le plan** (403 MODEL_NOT_IN_PLAN).
+
+**→ H4 ne peut pas être implémenté côté client sur ces providers.** La question devient un choix du provider (la stratégie d'exclusion est côté serveur), pas un levier du harness.
+
+### 8.3 Piste alternative (H4-variant implicite, à décider)
+
+L'esprit de H4 (réduire ce qui est relu/écrit en cache) peut être testé en cache implicite via la **compaction** : remplacer les vieux tool results par des résumés → préfixe plus court → moins de tokens relus. MAIS la compaction a son propre coût (un tour de résumé + invalidation du préfixe) — c'est un tradeoff à mesurer, pas une optimisation évidente. **Non exécuté par défaut** (s'éloigne de H4 littéral, coût non négligeable).
+
+### 8.4 Verdict global final (toutes hypothèses)
+
+| Hyp | Verdict | Exécutable/Applicable |
+|---|---|---|
+| H1 gel system prompt | Nuancée (miss total si set d'outils change) | ✅ applicable (pi) |
+| H2 breakpoint dernier user | Déjà optimale (91.9 % hit) | ✅ mesuré |
+| H3 cwd hors system | Réfutée (biais + bruit croisé) | ✅ mesuré |
+| H4 exclude tool results | **Inapplicable** (cache implicite, Claude bloqué) | ❌ pas testable ici |
+| H5 keepalive | Non testé (nécessite pauses > TTL) | ⚠️ long |
+| H6 resume bit-identique | Validée | ✅ mesuré |
+| H7-H10 | Hors périmètre | — |
+
+---

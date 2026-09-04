@@ -86,7 +86,7 @@ Après correction (repos égalisés) + validation croisée sur **commandcode** e
 | H2 breakpoint dernier user | **Déjà optimale** | Hit 91.9 % en boucle d'outils |
 | H3 cwd hors system | **RÉFUTÉE** | Δ = bruit, signes inversés entre providers |
 | H6 resume bit-identique | **Validée** | Hit total au resume, sysHash identique |
-| H4 hybride exclude tool results | Non testé (priorité basse) | — |
+| H4 hybride exclude tool results | **Inapplicable** (cache implicite, Claude bloqué par plan) | Vérifié payload |
 | H5 keepalive | Non testé (besoin pauses > 5 min) | — |
 | H7-H10 | Hors périmètre rapide | — |
 
