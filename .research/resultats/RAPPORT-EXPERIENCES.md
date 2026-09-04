@@ -12,7 +12,7 @@
 | **E0** | Repro / banc | ✅ Verrouillé | Instrumentation segmentée, déterminisme, P10 nuancé |
 | **E1** | P0-A découplage system↔outils | ✅ **Mécanisme validé** (mesure finale RPC à confirmer) | system figé 12f1ccdf malgré changement d'outils + Operating instructions injectées |
 | **E2** | P0-B table sémantique | ⚠️ **GAP trouvé** | dernier tool non marqué sur modèles explicites (claude via commandcode) |
-| **E3** | P0-C TTL long vs court | 🔄 En cours | — |
+| **E3** | P0-C TTL long vs court | ✅ **TTL non-bloquant** | cr=2816 constant après 5.5 min de pause (opencode-go) |
 | **E4** | P1-D warmup | ❌ **INUTILE** | cr=2816 dès le 1er tour dans les 2 cond (system partagé) |
 | **E5** | P1-E keepalive | ⏳ Non exécuté (4-8h, prérequis E7b) | — |
 | **E6** | P1-F suffixe minimal | ⏳ Non exécuté (2h) | — |
@@ -43,9 +43,10 @@
 - **Impact** : sur modèles explicites accessibles, les définitions d'outils ne sont pas rejouées en cache → coût/latence.
 - **Verdict** : P0-B est nécessaire (le bridge commandcode ne propage pas le marquage tools).
 
-### E3 — P0-C TTL long vs court 🔄 en cours
-- Mesure cr après pauses croissantes (60-240s) avec retention short puis long.
-- À compléter (voir rapport e3).
+### E3 — P0-C TTL long vs court ✅ TTL non-bloquant sur opencode-go
+- **cr=2816 CONSTANT** après 60s, 120s, 240s ET **330s (5.5 min)** de pause en mode short → le cache survit au-delà du TTL 5 min Anthropic.
+- **P0-C neutralisée sur opencode-go** : activer la rétention longue n'apporte rien (pas de goulot TTL).
+- Reste pertinent pour les providers Anthropic-stricts (non testable ici) — confirme la sémantique par (provider, modèle) de P0-B.
 
 ### E4 — P1-D warmup ❌ INUTILE
 - 3 sessions/cond randomisées : cr=2816 (hit max) au 1er tour réel DANS LES 2 conditions.

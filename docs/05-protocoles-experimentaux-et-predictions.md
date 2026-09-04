@@ -818,3 +818,28 @@ L'esprit de H4 (réduire ce qui est relu/écrit en cache) peut être testé en c
 | H7-H10 | Hors périmètre | — |
 
 ---
+
+---
+
+## PARTIE 9 — VERDICTS DES EXPÉRIENCES E0-E10 (validation P0-P2)
+
+> **Exécuté** : 2026-09-04 · Providers : opencode-go, commandcode · Bac à sable .pi-test · Détails : `.research/resultats/`
+
+| Exp | Verdict | Découverte |
+|---|---|---|
+| **E0** | ✅ Banc verrouillé | Instrumentation segmentée ; **P10 nuancé** : le system de pi est partagé entre sessions → le 1er tour n'est PAS toujours un miss |
+| **E1 (P0-A)** | ✅ Mécanisme validé | Le system peut rester **bit-stable** quand les outils changent (snapshot + Operating instructions aux 1er message) ; campagne N≥5 à finaliser en process-continu |
+| **E2 (P0-B)** | ⚠️ GAP | Sur modèles explicites (claude via commandcode), le **dernier tool n'a PAS cache_control** — à corriger (bridge/compat) |
+| **E3 (P0-C)** | ✅ TTL non-bloquant | Le cache opencode-go **survit 5.5 min** (cr=2816 constant) → P0-C neutralisée sur ce provider |
+| **E4 (P1-D)** | ❌ INUTILE | Warmup superflu : system partagé → déjà caché au 1er tour (cr=2816 dans les 2 conditions) |
+| **E10 (P5)** | ✅ Stable | Pas de non-déterminisme sur opencode-go (cr constant) → fiable pour les mesures |
+| E5-E9 | ⏳ Non exécutés | Keepalive (4-8h), suffixe minimal, anti-miss, compaction — priorité basse, documentés comme suite |
+
+**Conséquences pour pi** :
+1. **P0-A** (découplage) : mécanisme prouvé → implémenter (refonte de `_rebuildSystemPrompt`).
+2. **P0-B** (table sémantique) : GAP réel sur explices → corriger le marquage du dernier tool.
+3. **P0-C** (TTL long) : **inutile sur opencode-go** → ne pas l'activer par défaut sur ce provider.
+4. **P1-D** (warmup) : **ne pas implémenter** (system partagé rend le warmup coûteux et inutile).
+5. **E10** : opencode-go fiable → les mesures H sont valides.
+
+**Coût total des expériences** : ~0.6-0.8 $ (deepseek-v4-flash — bien sous le budget 2.6-5.6 $ estimé).
