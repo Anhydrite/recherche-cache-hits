@@ -116,3 +116,26 @@ H3_PROVIDER=commandcode H3_MODEL=deepseek/deepseek-v4-flash N=3 ./scripts/run-h3
 ```
 
 **Providers testés** : `commandcode` (deepseek/deepseek-v4-flash) et `opencode-go` (deepseek-v4-flash).
+---
+
+## 🧠 Orchestration multi-agents (recherche augmentée)
+
+En complément du travail expérimental, une **recherche multi-agents en 5 phases** a été orchestrée (11 agents, séparation des préoccupations anti-biais) :
+
+| Phase | Agents | N | Livrables |
+|---|---|---|---|
+| 1. Recherche état de l'art | 3 × researcher | 4 rapports | harnesses, infra/APIs, littérature |
+| 2. Analyse | 2 × analyste | 2 rapports | mécanisme du cache + gouvernance pi (code réel) |
+| 3. **Blind** (sans accès recherche) | 2 × delegate | 2 rapports | 30 idées (I-01..I-30) + optimisations client |
+| 4. Synthèse | 2 × delegate | 2 rapports | solutions P0-P2 + architecture cible (10 principes) |
+| 5. Hypothèses | 2 × delegate | 2 rapports | postulats + hypothèses formelles + protocoles |
+
+**Résultat clé — la convergence chercheurs ↔ blind** : les agents isolés ont proposé indépendamment les mêmes leviers que les chercheurs sourcés (frozen system prompt, TTL long, keepalive économique, anti-overcaching). C'est une validation indépendante.
+
+**Synthèse complète** : `.research/RAPPORT-CONSOLIDE.md` + 12 rapports détaillés dans `.research/phase{1..5}-*/`
+
+**Plan d'implémentation pour pi** (priorisé) :
+- **P0** : découplage system↔outils (F1), table sémantique provider/modèle, TTL long
+- **P1** : warmup, keepalive probabiliste, suffixe minimal, ordonnancement anti-miss
+- **P2** : compaction douce préservant le préfixe
+
